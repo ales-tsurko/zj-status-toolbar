@@ -1,0 +1,5 @@
+# Stable builds and Clippy. Nightly is used separately for rustfmt.
+[toolchain]
+channel = "stable"
+components = ["clippy", "llvm-tools-preview"]
+targets = ["wasm32-wasip1"]

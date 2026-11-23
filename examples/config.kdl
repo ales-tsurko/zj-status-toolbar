@@ -1,0 +1,56 @@
+// Merge this plugins block into config.kdl and update the WASM path.
+// Install only the optional commands you keep in this example.
+plugins {
+    toolbar location="file:/path/to/zj-status-toolbar.wasm" {
+        config r#"
+            tabs icon="" active-accent=1 {
+                icon "" program="nvim"
+                icon "" program="yazi"
+            }
+
+            widget label="" priority=6 { session; }
+            widget label="" priority=8 max-width=20 {
+                command "git" "branch" "--show-current" cwd="focused" every=4
+            }
+            widget label="󰋊" priority=3 gap=4 {
+                command "sh" "-c" "df -h / | awk 'NR == 2 {print $4}'" every=30
+            }
+            widget label="" priority=4 {
+                command "fastfetch" "--logo" "none" "--pipe" "true" "--structure" "Memory" "--memory-key" " " "--memory-format" "{used}" every=10
+            }
+            widget label="" priority=5 {
+                command "fastfetch" "--logo" "none" "--pipe" "true" "--structure" "CPUUsage" "--cpuusage-key" " " "--cpuusage-format" "{avg}" every=5
+            }
+            widget priority=2 gap=4 {
+                command "fastfetch" "--logo" "none" "--pipe" "true" "--structure" "NetIO" "--netio-key" " " "--netio-format" "↑{tx-size} ↓{rx-size}" every=5
+            }
+            widget label="󰃰" priority=10 gap=4 {
+                command "date" "+%a %H:%M" every=15
+            }
+
+            button "files" label="Files" icon="" on-icon="" shortcut="y" accent=0 {
+                toggle { Run "yazi" { direction "Down"; }; }
+            }
+            button "browser" label="Browser" icon="󰖟" on-icon="󰞉" shortcut="b" accent=1 {
+                toggle { Run "terminal-browser" "open" "about:blank" "--no-merge" { direction "Right"; }; }
+            }
+            button "tasks" label="Tasks" icon="󰄱" on-icon="󰄲" shortcut="a" accent=2 {
+                toggle grow=3 { Run "aven" "tui" { direction "Down"; }; }
+            }
+            button "diff" label="Diff" icon="" shortcut="d" accent=3 {
+                action cwd="focused" { Run "hunk" "diff" "--watch" { direction "Down"; close_on_exit true; }; }
+            }
+            button "inbox" label="Inbox" icon="" shortcut="i" accent=1 {
+                action { ToggleSessionCard; }
+            }
+            button "palette" label="Palette" icon="󰘳" shortcut="Space" accent=0 {
+                action {
+                    LaunchOrFocusPlugin "https://github.com/rashidalnaemi/zellij-commandpalette/releases/download/v0.1.1/zellij-commandpalette.wasm" {
+                        floating true
+                        move_to_focused_tab true
+                    }
+                }
+            }
+        "#
+    }
+}
