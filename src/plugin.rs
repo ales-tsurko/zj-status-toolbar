@@ -369,13 +369,13 @@ impl Toolbar {
 
 impl ZellijPlugin for Toolbar {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
-        set_selectable(false);
         let ids = get_plugin_ids();
         self.plugin_id = Some(ids.plugin_id);
         self.initial_cwd = ids.initial_cwd;
         match Config::parse(configuration.get("config").map_or("", String::as_str)) {
             Ok(config) => self.config = config,
             Err(error) => {
+                set_selectable(false);
                 self.error = Some(format!("Toolbar configuration: {error}"));
                 return;
             }
@@ -410,12 +410,14 @@ impl ZellijPlugin for Toolbar {
         {
             permissions.push(PermissionType::ChangeApplicationState);
         }
+        // Keep the pane focusable while Zellij displays its permission prompt.
         request_permission(&permissions);
     }
 
     fn update(&mut self, event: Event) -> bool {
         match event {
             Event::PermissionRequestResult(PermissionStatus::Granted) => {
+                set_selectable(false);
                 self.ready = true;
                 self.refresh_widgets();
                 if self.config.needs_commands() {
@@ -424,6 +426,7 @@ impl ZellijPlugin for Toolbar {
                 true
             }
             Event::PermissionRequestResult(PermissionStatus::Denied) => {
+                set_selectable(false);
                 self.error = Some("Toolbar permissions were denied".into());
                 true
             }
@@ -572,7 +575,18 @@ mod tests {
         actions: Vec<(Action, BTreeMap<String, String>)>,
         commands: Vec<(PathBuf, BTreeMap<String, String>)>,
         resize: Vec<PaneId>,
+        selectable: Vec<bool>,
         cwd: PathBuf,
+    }
+
+    #[test]
+    fn keeps_the_toolbar_focusable_until_permissions_are_answered() {
+        for status in [PermissionStatus::Granted, PermissionStatus::Denied] {
+            let mut toolbar = load();
+            HOST.with_borrow(|host| assert!(host.selectable.is_empty()));
+            assert!(toolbar.update(Event::PermissionRequestResult(status)));
+            HOST.with_borrow(|host| assert_eq!(host.selectable, vec![false]));
+        }
     }
 
     #[test]
@@ -771,7 +785,9 @@ mod tests {
     }
 
     pub(super) fn request_permission(_: &[PermissionType]) {}
-    pub(super) fn set_selectable(_: bool) {}
+    pub(super) fn set_selectable(selectable: bool) {
+        HOST.with_borrow_mut(|host| host.selectable.push(selectable));
+    }
     pub(super) fn set_timeout(_: f64) {}
     pub(super) fn subscribe(_: &[EventType]) {}
 
