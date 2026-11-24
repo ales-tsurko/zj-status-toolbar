@@ -5,6 +5,7 @@ use std::{fmt::Write, ops::Range};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 use zellij_tile::prelude::{Palette, PaletteColor, Styling};
+use zellij_utils::shared::eightbit_to_rgb;
 
 use crate::config::{Button, Tabs, Widget};
 
@@ -46,8 +47,8 @@ pub(crate) struct View<'a> {
 impl View<'_> {
     pub(crate) fn render(&self, rows: usize, columns: usize) -> (String, Vec<Hit>) {
         let colors = Colors::new(self.theme, self.tab_options.active_accent);
-        let mut status = Row::new(columns, colors.foreground, colors.background);
-        let mut toolbar = Row::new(columns, colors.foreground, colors.toolbar);
+        let mut status = Row::new(columns, colors.foreground, colors.status_background);
+        let mut toolbar = Row::new(columns, colors.foreground, colors.background);
         if let Some(error) = self.error {
             status.push(&clip(&clean(error), columns), colors.foreground, "", None);
         } else {
@@ -268,7 +269,7 @@ impl View<'_> {
 struct Colors {
     foreground: Option<PaletteColor>,
     background: Option<PaletteColor>,
-    toolbar: Option<PaletteColor>,
+    status_background: Option<PaletteColor>,
     active: Option<PaletteColor>,
     accents: [Option<PaletteColor>; 4],
 }
@@ -279,19 +280,20 @@ impl Colors {
             return Self {
                 foreground: None,
                 background: None,
-                toolbar: None,
+                status_background: None,
                 active: None,
                 accents: [None; 4],
             };
         };
         let text = theme.text_unselected;
-        let toolbar = match (text.background, text.base) {
-            (PaletteColor::Rgb(bg), PaletteColor::Rgb(fg)) => {
-                let mix = |bg, fg| ((u16::from(bg) * 15 + u16::from(fg)) / 16) as u8;
-                PaletteColor::Rgb((mix(bg.0, fg.0), mix(bg.1, fg.1), mix(bg.2, fg.2)))
-            }
-            (background, _) => background,
-        };
+        let [(bg_r, bg_g, bg_b), (fg_r, fg_g, fg_b)] =
+            [text.background, text.base].map(|color| match color {
+                PaletteColor::Rgb(rgb) => rgb,
+                PaletteColor::EightBit(index) => eightbit_to_rgb(index),
+            });
+        let mix = |bg, fg| ((u16::from(bg) * 15 + u16::from(fg)) / 16) as u8;
+        let status_background =
+            PaletteColor::Rgb((mix(bg_r, fg_r), mix(bg_g, fg_g), mix(bg_b, fg_b)));
         let accents = [
             text.emphasis_0,
             text.emphasis_1,
@@ -305,9 +307,9 @@ impl Colors {
         Self {
             foreground: Some(text.base),
             background: Some(text.background),
-            toolbar: Some(toolbar),
-            active: Some(readable(active, text.background, text.base)),
-            accents: accents.map(|accent| Some(readable(accent, toolbar, text.base))),
+            status_background: Some(status_background),
+            active: Some(readable(active, status_background, text.base)),
+            accents: accents.map(|accent| Some(readable(accent, text.background, text.base))),
         }
     }
 }
@@ -490,6 +492,38 @@ fn clip(value: &str, columns: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tints_the_status_from_rgb_and_indexed_theme_colors() {
+        let mut theme = Styling::default();
+        let config = crate::config::Config::parse("").expect("empty toolbar config");
+        let view = |theme| View {
+            theme: Some(theme),
+            tabs: &[],
+            tab_options: &config.tabs,
+            widgets: &[],
+            values: &[],
+            buttons: &[],
+            open: &[],
+            hover: None,
+            error: None,
+        };
+        theme.text_unselected.background = PaletteColor::Rgb((16, 32, 48));
+        theme.text_unselected.base = PaletteColor::Rgb((240, 240, 240));
+        let (output, _) = view(theme).render(2, 80);
+        let (status, toolbar) = output.split_once("\r\n").expect("two rows");
+        assert!(status.contains("\x1b[48;2;30;45;60m"));
+        assert!(toolbar.contains("\x1b[48;2;16;32;48m"));
+
+        theme.text_unselected.background = PaletteColor::EightBit(0);
+        theme.text_unselected.base = PaletteColor::EightBit(15);
+        theme.text_selected.background = PaletteColor::EightBit(8);
+        let (output, _) = view(theme).render(2, 80);
+        let (status, toolbar) = output.split_once("\r\n").expect("two rows");
+        assert!(status.contains("\x1b[48;2;15;15;15m"));
+        assert!(toolbar.contains("\x1b[48;5;0m"));
+        assert!(!status.contains("\x1b[4m"));
+    }
 
     #[test]
     fn truncates_by_cells_without_splitting_a_grapheme() {
